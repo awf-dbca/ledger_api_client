@@ -22,6 +22,9 @@ from reversion.admin import VersionAdmin as ReversionVersionAdmin
 from django.urls import reverse
 from reversion.models import Version
 
+from django.contrib.admin.models import LogEntry, CHANGE
+from django.contrib.contenttypes.models import ContentType
+
 #@admin.register(managed_models.SystemGroupPermission)
 class SystemGroupPermissionInline(admin.TabularInline):
     model = managed_models.SystemGroupPermission
@@ -94,6 +97,57 @@ class SystemGroupAdmin(ModelAdmin):
                 ],
                 context,
             )
+
+    def save_formset(self, request, form, formset, change):
+
+        for inline_form in formset.forms:
+
+            if not inline_form.is_valid():
+                continue
+
+            if not inline_form.has_changed():
+                continue
+
+            instance = inline_form.instance
+
+            if inline_form.cleaned_data.get('DELETE', False):
+
+                if instance.pk:
+
+                    LogEntry.objects.log_action(
+                        user_id=request.user.id,
+                        content_type_id=ContentType.objects.get_for_model(managed_models.SystemGroup).id,
+                        object_id=form.instance.id,
+                        object_repr=str(form.instance),
+                        action_flag=CHANGE,
+                        change_message='Removed user {} from group'.format(instance.emailuser)
+                    )
+
+                continue
+
+            is_new = instance.pk is None
+
+            if is_new:
+                message = 'Added user {} to group (active={})'.format(
+                    instance.emailuser,
+                    instance.active
+                )
+            else:
+                message = 'Updated user {} in group (active={})'.format(
+                    instance.emailuser,
+                    instance.active
+                )
+
+            LogEntry.objects.log_action(
+                user_id=request.user.id,
+                content_type_id=ContentType.objects.get_for_model(managed_models.SystemGroup).id,
+                object_id=form.instance.id,
+                object_repr=str(form.instance),
+                action_flag=CHANGE,
+                change_message=message
+            )
+
+        formset.save()
 
 @admin.register(managed_models.SystemUser)
 class SystemuserAdmin(ModelAdmin):
